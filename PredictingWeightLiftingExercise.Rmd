@@ -1,0 +1,147 @@
+---
+title: "Predicting Activity Type - Human Activity Recognition"
+output: html_document
+date: "October 24, 2015"
+---
+
+# Executive Summary
+
+Human Activity Recognition (HAR) can be seen as an extension of the quantified self movement where participants collect data about their activity through the use of accelerometer based products such as Nike Fit, Jawbone Up, or FitBit. The Weight Lifting Exercise (WLE) dataset contains measurements from a number of participants performing different exercises while monitored by such a device. The intent of this project is to develop a model to predict the type of activity performed based upon the device outputs.
+
+The HAR study was first published as
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. **Qualitative Activity Recognition of Weight Lifting Exercises**. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Information about this research and the WLE data used in this analysis can be found at the [Human Activity Recognition website](http://groupware.les.inf.puc-rio.br/har) website. 
+
+# Exploratory Analysis
+
+Loading the WLE training data yields a data frame with 19,622 records containing 160 variables. All variables are read as is and not converted to factors so the dependent variable, *classe*, is manually cast as a factor. This training data is split into a set that will be used to train a model and a test set that will be used to validate the model. 
+
+```{r, echo=FALSE,message=FALSE}
+library(caret)
+```
+
+```{r}
+set.seed(32649)
+originalTraining <- read.csv(file="data/pml-training.csv",
+                             stringsAsFactors = FALSE)
+
+originalTraining$classe <- as.factor(originalTraining$classe)
+
+inTrain <- createDataPartition(y=originalTraining$classe,
+                               p=0.7, list=FALSE)
+
+training <- originalTraining[inTrain, ]
+testing <- originalTraining[-inTrain, ]
+```
+
+The data is checked to determine if there are variables with a considerable number of NAs. While a variable with a large number of NAs may be significant in predicting the type of exercise being performed, a large number of NAs will limit its effectiveness in the model.
+
+```{r}
+sparseVars <- function(x) {
+    numVars <- length(x)
+    numNAs <- sum(is.na(as.numeric(x)))
+    return((numVars - numNAs)/numVars)
+}
+
+sparseVariables <- apply(training, 2, sparseVars)
+```
+
+```{r sv1,echo=FALSE,results="hide"}
+sv1 <- dim(training)[2] - sum(sparseVariables > 0.9)
+```
+
+There are `r sv1` variables where NAs  account for more than 90% of the readings. These variables will be removed from the model. The initial seven variables are used for subject identification and are removed as well.
+
+```{r}
+newTraining <- training[,sparseVariables > 0.9]
+
+newTraining <- newTraining[,seq(-1,-7)]
+
+newTraining$classe <- training$classe
+```
+
+Class imbalance is often a problem when creating classification models. Checking for the frequency of the output classes in the training set shows no significant concerns.
+
+```{r}
+barplot(summary(newTraining$classe), xlab="Class", 
+        ylab="Number", 
+        main = "Frequency of Classes in Training Data")
+```
+
+# Model Building and Selection
+
+Random forests are useful in a multi-class model where other approaches (e.g., adaBoost) are limited to only two classes of dependent variable. This model will start with a random forest, trained using the *caret* package to test multiple branch counts, controlled by the *mtry* flag. Classification random forests typically use $\sqrt{p}$ branches where $p$ is the number of independent variables in the model.
+
+The training set has been split into training and testing components to control for overfitting and allow for the prediction of out of sample error. In order to minimize overfitting, repeated cross validation of the training component will be used. Each cross validation will use 10% of the training set as a validation data set. Each model will be cross validated three times. This is set using *caret*'s *trainControl* function.
+
+```{r}
+rfControl <- trainControl(method="repeatedcv", 
+                           number = 10,
+                           repeats = 3)
+rfGrid <- expand.grid(mtry = c(3, 5, 8, 10))
+modFit <- train(classe ~ ., data = newTraining, 
+                method="rf", trControl = rfControl,
+                tuneGrid = rfGrid)
+```
+
+The final model is a random forest with the following specifications:
+
+```{r}
+print(modFit)
+```
+
+# Interpretation and Prediction
+
+Random forest models are more difficult to interpret than simpler models such as linear regression. This means it is more difficult to determine which independent variables will impact the dependent variable most when the independent variable changes. One way to visualize these impacts is by checking the variable importance. Variable importance measures which variables were used by the most trees in the random forest model. In this model, the most often used variables are:
+
+```{r}
+plot(varImp(modFit), main = "Variable Importance Plot", top = 10)
+```
+
+Applying this model to the testing data set will yield the predicted exercises. The first ten predictions are shown for brevity.
+
+```{r, echo=TRUE,results="hide"}
+testPredictions <- predict(modFit, testing)
+head(testPredictions, n=10)
+```
+
+The accuracy of the predictions can be seen in the confusion matrix which compares the predicted values with the actual exercises performed in the test data set:
+
+```{r}
+confusionMatrix(testing$classe, testPredictions)$table
+```
+
+This model has an accuracy of
+
+```{r}
+confusionMatrix(testing$classe, testPredictions)$overall[1]
+```
+
+All model training and selection was performed using the training data using cross validation. The testing data was only used for  prediction. The accuracy is a measure of out of sample error with the expected out of sample error being $1 - Accuracy \approx 0.0078$.
+
+# Project Submission
+
+This model will now be applied to a different set of WLE data for submission to Coursera. This process will use code authored by J. T. Leek.
+
+```{r, results="hide"}
+pml_write_files <- function(x){
+    n <- length(x)
+    for(i in 1:n){
+        filename <- paste0("submission/","problem_id_",i,".txt")
+        write.table(x[i],file=filename,
+                    quote=FALSE,row.names=FALSE,
+                    col.names=FALSE)
+        }
+}
+
+finalTesting <- read.csv(file="data/pml-testing.csv",
+                         stringsAsFactors = FALSE)
+finalPredictions <- predict(modFit, finalTesting)
+pml_write_files(finalPredictions)
+```
+
+# Summary
+
+The Human Activity Recognition Weight Lifting Exercise was used to build a prediction model which identified the exercise performed based on accelerometer readings generated during the exercise. In spite of a large number of invalid readings, represented as NAs in the data sets, a random forest model was able to accurately predict the exercise performed in 99% of the cases.
