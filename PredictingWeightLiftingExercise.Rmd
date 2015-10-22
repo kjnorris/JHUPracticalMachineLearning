@@ -38,7 +38,7 @@ testing <- originalTraining[-inTrain, ]
 
 The data is checked to determine if there are variables with a considerable number of NAs. While a variable with a large number of NAs may be significant in predicting the type of exercise being performed, a large number of NAs will limit its effectiveness in the model.
 
-```{r}
+```{r,warning=FALSE}
 sparseVars <- function(x) {
     numVars <- length(x)
     numNAs <- sum(is.na(as.numeric(x)))
@@ -97,7 +97,7 @@ print(modFit)
 Random forest models are more difficult to interpret than simpler models such as linear regression. This means it is more difficult to determine which independent variables will impact the dependent variable most when the independent variable changes. One way to visualize these impacts is by checking the variable importance. Variable importance measures which variables were used by the most trees in the random forest model. In this model, the most often used variables are:
 
 ```{r}
-plot(varImp(modFit), main = "Variable Importance Plot", top = 10)
+plot(varImp(modFit), main = "Variable Importance Plot", top = 15)
 ```
 
 Applying this model to the testing data set will yield the predicted exercises. The first ten predictions are shown for brevity.
